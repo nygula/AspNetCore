@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netcoreapp3.0</TargetFramework>
@@ -11,9 +11,6 @@
     <NoWarn>$(NoWarn);NU1605</NoWarn>
     <!-- https://github.com/aspnet/AspNetCore/issues/6549 -->
     <BuildHelixPayload>false</BuildHelixPayload>
-    <IsTestProject>false</IsTestProject>
-    <IsReferenceAssemblyProject>false</IsReferenceAssemblyProject>
-    <IsProjectReferenceProvider>false</IsProjectReferenceProvider>
   </PropertyGroup>
 
   <ItemGroup>
@@ -37,6 +34,70 @@
     <Reference Include="Microsoft.Extensions.Logging.Abstractions" />
     <Reference Include="Microsoft.Extensions.Logging.Testing" />
     <Reference Include="System.Data.SqlClient" />
+    <ProjectReference Include="..\..\samples\MusicStore\MusicStore.csproj" />
   </ItemGroup>
+
+  <Target 
+    Name="_RunPublishAssets" 
+    BeforeTargets="Build"
+    DependsOnTargets="PublishAssets" 
+    Condition="'$(SkipTests)' != 'true' OR '$(BuildHelixPayload)' != 'false'" />
+
+  <Target Name="PublishAssets">
+    <ItemGroup>
+      <Server Include="IISExpress;HttpSys" />
+      <ApplicationType Include="Portable;Standalone" />
+      <HostingModel Include="InProcess;OutOfProcess" />
+      <Architecture Include="x64;x86" />
+
+      <_Join0 Include="..\..\samples\MusicStore\MusicStore.csproj" Server="%(Server.Identity)" />
+      <_Join1 Include="@(_Join0)" ApplicationType="%(ApplicationType.Identity)" />
+      <_Join2 Include="@(_Join1)" HostingModel="%(HostingModel.Identity)" />
+      <_Join3 Include="@(_Join2)" Architecture="%(Architecture.Identity)" />
+
+      <PublishAsset 
+        Include="..\..\samples\MusicStore\MusicStore.csproj" 
+        Architecture="%(_Join3.Architecture)" 
+        ApplicationType="%(_Join3.ApplicationType)" 
+        Server="%(_Join3.Server)" 
+        HostingModel="%(_Join3.HostingModel)"
+        PublishDirectory="$(MSBuildThisFileDirectory)$(IntermediateOutputPath)testassets\$([System.IO.Path]::GetRandomFileName())" />
+    </ItemGroup>
+
+    <MSBuild 
+      Projects="$(MSBuildProjectFullPath)"
+      Targets="_PublishAsset"
+      Properties="PublishProject=%(PublishAsset.Identity);Architecture=%(Architecture);ApplicationType=%(ApplicationType);Server=%(Server);HostingModel=%(HostingModel);PublishDirectory=%(PublishDirectory)" 
+      BuildInParallel="false" />
+
+    <ItemGroup>
+      <AssemblyAttribute Include="MusicStore.PublishAssetAttribute">
+        <_Parameter1>%(PublishAsset.Architecture)</_Parameter1>
+        <_Parameter2>%(PublishAsset.ApplicationType)</_Parameter2>
+        <_Parameter3>%(PublishAsset.Server)</_Parameter3>
+        <_Parameter4>%(PublishAsset.HostingModel)</_Parameter4>
+        <_Parameter5>%(PublishAsset.PublishDirectory)</_Parameter5>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+  <Target Name="_PublishAsset">
+    <PropertyGroup>
+      <PublishCommandOptions>BuildDependencies=false;PublishDir=$(PublishDirectory);Configuration=$(Configuration);TargetArchitecture=$(Architecture);</PublishCommandOptions>
+      <PublishCommandOptions Condition="'$(ApplicationType)' == 'Standalone' AND '$(OS)'=='Windows_NT'">$(PublishCommandOptions)RuntimeIdentifier=win-$(Architecture);</PublishCommandOptions>
+      <PublishCommandOptions Condition="'$(ApplicationType)' == 'Standalone' AND '$(OS)'=='OSX'">$(PublishCommandOptions)RuntimeIdentifier=osx-$(Architecture);</PublishCommandOptions>
+      <PublishCommandOptions Condition="'$(ApplicationType)' == 'Standalone' AND '$(OS)'=='Unix'">$(PublishCommandOptions)runtime linux-$(Architecture);</PublishCommandOptions>
+
+      <!-- Avoid rebuilding when we can -->
+      <PublishCommandOptions Condition="'$(ApplicationType)' == 'Portable'">$(PublishCommandOptions);NoBuild=true;</PublishCommandOptions>
+      <!-- Workaround for https://github.com/aspnet/websdk/issues/422 -->
+      <PublishCommandOptions Condition="'$(ApplicationType)' == 'Portable'">$(PublishCommandOptions);UseAppHost=false;</PublishCommandOptions>
+    </PropertyGroup>
+
+    <MSBuild
+      Projects="$(PublishProject)"
+      Targets="Publish"
+      Properties="$(PublishCommandOptions)" />
+  </Target>
 
 </Project>

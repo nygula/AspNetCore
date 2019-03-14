@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Server.IntegrationTesting;
 using Microsoft.AspNetCore.Testing.xunit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
+using MusicStore;
 using Xunit;
 
 namespace E2ETests
@@ -14,17 +17,26 @@ namespace E2ETests
     [Trait("E2Etests", "PublishAndRun")]
     public class PublishAndRunTests : LoggedTest
     {
-        public static TestMatrix TestVariants
-            => TestMatrix.ForServers(ServerType.IISExpress, ServerType.HttpSys)
-                .WithTfms(Tfm.NetCoreApp30)
-                .WithAllApplicationTypes()
-                .WithAllHostingModels()
-                .WithAllArchitectures();
+        public static IEnumerable<object[]> TestVariants
+        {
+            get
+            {
+                var attributes = typeof(PublishAndRunTests).Assembly
+                    .GetCustomAttributes<PublishAssetAttribute>()
+                    .Select(a => new object[] { a })
+                    .ToList();
+
+                Assert.NotEmpty(attributes);
+
+                return attributes;
+            }
+        }
 
         [ConditionalTheory]
         [MemberData(nameof(TestVariants))]
-        public async Task PublishAndRun_Test(TestVariant variant)
+        public async Task PublishAndRun_Test(PublishAssetAttribute publishAsset)
         {
+            var variant = publishAsset.GetTestVariant();
             var testName = $"PublishAndRunTests_{variant}";
             using (StartLog(out var loggerFactory, testName))
             {
@@ -34,12 +46,12 @@ namespace E2ETests
                 var deploymentParameters = new DeploymentParameters(variant)
                 {
                     ApplicationPath = Helpers.GetApplicationPath(),
-                    PublishApplicationBeforeDeployment = true,
+                    PublishedApplicationRootPath = publishAsset.PublishDirectory,
                     PreservePublishedApplicationForDebugging = Helpers.PreservePublishedApplicationForDebugging,
                     UserAdditionalCleanup = parameters =>
                     {
                         DbUtils.DropDatabase(musicStoreDbName, logger);
-                    }
+                    },
                 };
 
                 // Override the connection strings using environment based configuration
